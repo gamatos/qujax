@@ -244,8 +244,83 @@ def get_default_operations(
 
         return apply_conditional_gate
 
+    def measure(qubit_index: int, classical_register_index: int) -> Op:
+        """
+        Measure qubit.
+
+        Args:
+            qubit_index: index of qubit to measure
+        """
+
+        def apply_measure(
+            op_params: Tuple[jax.Array],
+            statetensor_in: jax.Array,
+            classical_registers_in: jax.Array,
+        ) -> Tuple[jax.Array, jax.Array]:
+            """
+            Applies a gate specified by an index passed in `op_params` to a statetensor.
+
+            Args:
+                op_params: gates from which one is selected to be applied
+                statetensor_in: indices of qubits the selected gate is to be applied to
+                classical_registers_in: indices of qubits the selected gate is to be applied to
+            """
+
+            rng = op_params[0]
+            sum_axes = tuple(x for x in range(statetensor_in.ndim) if x != qubit_index)
+
+            probabilities = jnp.sum(jnp.square(jnp.abs(statetensor_in)), axis = sum_axes)
+            projection_on_zero_state = jnp.array(([[1, 0], [0, 0]]))
+            projection_on_one_state = jnp.array(([[0, 0], [0, 1]]))
+            projection_array = jnp.array(
+                [projection_on_zero_state, projection_on_one_state]
+            )
+
+            measurement = jax.random.choice(rng, jnp.array([1, -1]), p=probabilities)
+            projection = projection_array[(1 - measurement) // 2]
+            statetensor_in = apply_gate(statetensor_in, projection, [qubit_index])
+            statetensor_in /= jnp.linalg.norm(statetensor_in)
+
+            classical_registers_in = classical_registers_in.at[classical_register_index].set(measurement)
+            return statetensor_in, classical_registers_in
+
+        return apply_measure
+
+    def reset(qubit_index: int, classical_register_index: Optional[int] = None) -> Op:
+        """
+        Reset qubit.
+
+        Args:
+            qubit_index: index of qubit to reset
+        """
+
+        def apply_reset(
+            op_params: Tuple[jax.Array],
+            statetensor_in: jax.Array,
+            classical_registers_in: jax.Array,
+        ) -> Tuple[jax.Array, jax.Array]:
+            """ """
+
+            statetensor_in, measurement = measure(qubit_index, 0)(
+                op_params, statetensor_in, jnp.zeros(1)
+            )
+
+            if classical_register_index is not None:
+                classical_registers_in = classical_registers_in.at[classical_register_index].set(measurement.item())
+
+            axes_order = jnp.array([[0, 1], [1, 0]])
+            rescaled_measurement = (1 - measurement) // 2
+            index = rescaled_measurement.astype(int)
+            chosen_axes_order = axes_order[index].reshape(2)
+            # conditional rotation to zero state
+            return jnp.take(statetensor_in, chosen_axes_order, axis=qubit_index), classical_registers_in
+
+        return apply_reset
+
     op_dict["Generic"] = generic_op
     op_dict["ConditionalGate"] = conditional_gate
+    op_dict["Measure"] = measure
+    op_dict["Reset"] = reset
 
     return op_dict
 
@@ -287,12 +362,12 @@ def get_params(
         op_params = (params[param_inds],)
     elif isinstance(param_inds, dict) and isinstance(params, dict):
         op_params = tuple(
-            jnp.take(params[k], jnp.array(param_inds[k])) for k in param_inds
+            jnp.take(params[k], jnp.array(param_inds[k]), axis=0) for k in param_inds
         )
     elif isinstance(param_inds, (list, tuple)):
         if len(param_inds):
             if all(isinstance(x, int) for x in param_inds):
-                op_params = (jnp.take(params, jnp.array(param_inds)),)
+                op_params = (jnp.take(params, jnp.array(param_inds), axis=0),)
             else:
                 op_params = tuple(get_params(p, params) for p in param_inds)
         else:
@@ -384,7 +459,7 @@ def get_params_to_statetensor_func(
         ):
             op_params = get_params(param_pos, params)
             statetensor, classical_registers = op(
-                op_params, statetensor, classical_registers_in
+                op_params, statetensor, classical_registers
             )
 
         return statetensor, classical_registers
