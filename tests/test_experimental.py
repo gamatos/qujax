@@ -13,7 +13,7 @@ def test_get_params_to_statetensor_func():
 
     param_to_st = get_params_to_statetensor_func(ops, op_params, param_inds)
     param_to_st = jax.jit(param_to_st)
-    param = jnp.array(0.1)
+    param = jnp.array([0.1])
     st_in = all_zeros_statetensor(3)
     st, _ = param_to_st(param, st_in)
 
@@ -38,7 +38,7 @@ def test_get_params_to_statetensor_func():
 def test_stochasticity():
     ops = ["ConditionalGate"]
     op_params = [[["X", "Y", "Z"], [0]]]
-    param_inds = [[{"op_ind": 0}]]
+    param_inds = [{"op_ind": 0}]
 
     st_in = all_zeros_statetensor(1)
     X_apply = apply_gate(st_in, qujax.gates.X, [0])

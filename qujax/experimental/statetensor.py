@@ -222,9 +222,9 @@ def get_default_operations(
                 classical_registers_in: indices of qubits the selected gate is to be applied to
             """
             if len(op_params) == 1:
-                ind, gate_params = op_params[0], jnp.empty((len(gates), 0))
+                ind, gate_params = op_params[0][0], jnp.empty((len(gates), 0))
             elif len(op_params) == 2:
-                ind, gate_params = op_params[0], jnp.array(op_params[1])
+                ind, gate_params = op_params[0][0], op_params[1]
             else:
                 raise ValueError("Invalid number of parameters for ConditionalGate")
 
@@ -339,6 +339,7 @@ ParamInds = Optional[
 def get_params(
     param_inds: ParamInds,
     params: Union[Mapping[str, ArrayLike], ArrayLike],
+    root : bool = True
 ) -> Tuple[Any, ...]:
     """
     Extracts parameters from `params` using indices specified by `param_inds`.
@@ -357,25 +358,33 @@ def get_params(
     """
     op_params: Tuple[Any, ...]
     if param_inds is None:
-        op_params = (jnp.array([]),)
+        op_params = jnp.empty(0)
+    elif param_inds == 0 and jnp.isscalar(params):
+        op_params = jnp.array([params])
     elif isinstance(param_inds, int) and isinstance(params, jax.Array):
-        op_params = (params[param_inds],)
+        op_params = jnp.array([params[param_inds]])
     elif isinstance(param_inds, dict) and isinstance(params, dict):
         op_params = tuple(
-            jnp.take(params[k], jnp.array(param_inds[k]), axis=0) for k in param_inds
+             get_params(param_inds[k], params[k], False) for k in param_inds
         )
+        if len(op_params) == 1:
+            op_params = op_params[0]
     elif isinstance(param_inds, (list, tuple)):
         if len(param_inds):
             if all(isinstance(x, int) for x in param_inds):
-                op_params = (jnp.take(params, jnp.array(param_inds), axis=0),)
+                op_params = jnp.take(params, jnp.array(param_inds), axis=0)
             else:
-                op_params = tuple(get_params(p, params) for p in param_inds)
+                op_params = tuple(get_params(p, params, False) for p in param_inds)
         else:
-            op_params = (jnp.array([]),)
+            op_params = jnp.array([])
     else:
         raise TypeError(
             f"Invalid specification for parameters: {type(param_inds)=} {type(params)=}."
         )
+    
+    if root and not isinstance(op_params, tuple):
+        op_params = (op_params,)
+        
     return op_params
 
 
