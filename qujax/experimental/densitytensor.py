@@ -388,7 +388,7 @@ def get_params(
     return op_params
 
 
-def get_params_to_statetensor_func(
+def get_params_to_densitytensor_func(
     op_seq: Sequence[Operation],
     op_metaparams_seq: Sequence[Sequence[Any]],
     param_pos_seq: Sequence[ParamInds],
@@ -396,7 +396,7 @@ def get_params_to_statetensor_func(
     gate_dict: Optional[Mapping[str, Union[jax.Array, GateFunction]]] = None,
 ):
     """
-    Creates a function that maps circuit parameters to a statetensor.
+    Creates a function that maps circuit parameters to a densitytensor.
 
     Args:
         op_seq: Sequence of operations to be executed.
@@ -414,14 +414,14 @@ def get_params_to_statetensor_func(
         op_dict: Dictionary mapping strings to operations. Each operation is a function
             taking metaparameters (which are specified in `op_params_seq`) and returning another
             function. This returned function encodes the operation, and takes an array of
-            parameters, a statetensor and classical registers, and returns the updated statetensor
+            parameters, a densitytensor and classical registers, and returns the updated densitytensor
             and classical registers after the operation is applied.
         gate_dict: Dictionary mapping strings to gates. Each gate is either a jax.Array or a
             function taking a number of parameters and returning a jax.Array.
             Defaults to qujax's dictionary of gates.
     Returns:
-        Function that takes a number of parameters, an input statetensor and an input set of
-        classical registers, and returns the updated statetensor and classical registers
+        Function that takes a number of parameters, an input densitytensor and an input set of
+        classical registers, and returns the updated densitytensor and classical registers
         after the specified gates and operations are applied.
     """
     if gate_dict is None:
@@ -440,24 +440,24 @@ def get_params_to_statetensor_func(
         for op, params in zip(op_seq, op_metaparams_seq)
     ]
 
-    def params_to_statetensor_func(
+    def params_to_densitytensor_func(
         params: Union[Mapping[str, ArrayLike], ArrayLike],
-        statetensor_in: jax.Array,
+        densitytensor_in: jax.Array,
         classical_registers_in: Optional[jax.Array] = None,
     ) -> Tuple[jax.Array, PyTree]:
         """
-        Applies parameterised circuit to the quantum state represented by `statetensor_in`.
+        Applies parameterised circuit to the quantum state represented by `densitytensor_in`.
 
         Args:
             params: Parameters to be passed to the circuit
-            statetensor_in: Input state in tensor form.
+            densitytensor_in: Input state in tensor form.
             classical_registers_in: Classical registers that can store intermediate results
                 (e.g. measurements), possibly to later reuse them
         Returns:
             Resulting quantum state and classical registers after applying the circuit.
 
         """
-        statetensor = statetensor_in
+        densitytensor = densitytensor_in
         classical_registers = classical_registers_in
         for (
             op,
@@ -467,10 +467,10 @@ def get_params_to_statetensor_func(
             param_pos_seq,
         ):
             op_params = get_params(param_pos, params)
-            statetensor, classical_registers = op(
-                op_params, statetensor, classical_registers
+            densitytensor, classical_registers = op(
+                op_params, densitytensor, classical_registers
             )
 
-        return statetensor, classical_registers
+        return densitytensor, classical_registers
 
-    return params_to_statetensor_func
+    return params_to_densitytensor_func
