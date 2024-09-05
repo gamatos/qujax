@@ -101,7 +101,7 @@ def test_measure():
     op_params = [[0, 0]]
     param_inds = [[0]]
 
-    state = 1/jnp.sqrt(2) * jnp.array([1, 0, 0, 1]).reshape(2,2)
+    state = 1 / jnp.sqrt(2) * jnp.array([1, 0, 0, 1]).reshape(2, 2)
     seed = 0
 
     param_to_st = get_params_to_statetensor_func(ops, op_params, param_inds)
@@ -112,18 +112,19 @@ def test_measure():
         result, measurement = param_to_st(params, state, classical_registers)
 
         if measurement == 1:
-            assert jnp.allclose(result, jnp.array([1,0,0,0]).reshape(2,2))
+            assert jnp.allclose(result, jnp.array([1, 0, 0, 0]).reshape(2, 2))
         elif measurement == -1:
-            assert jnp.allclose(result, jnp.array([0,0,0,1]).reshape(2,2))
+            assert jnp.allclose(result, jnp.array([0, 0, 0, 1]).reshape(2, 2))
         else:
             raise ValueError("Measurement is not 1 or -1.")
+
 
 def test_measure_probability():
     ops = ["Measure"]
     op_params = [[0, 0]]
     param_inds = [[0]]
 
-    state = 1/jnp.sqrt(2) * jnp.array([1, 0, 0, 1]).reshape(2,2)
+    state = 1 / jnp.sqrt(2) * jnp.array([1, 0, 0, 1]).reshape(2, 2)
     seed = 0
 
     param_to_st = get_params_to_statetensor_func(ops, op_params, param_inds)
@@ -134,17 +135,20 @@ def test_measure_probability():
 
     vectorized_params = vectorized_rng.reshape(n_samples, 1, *rng.shape)
     classical_registers = jnp.zeros(1)
-    result, measurement = vectorized_param_to_st(vectorized_params, state, classical_registers)
+    result, measurement = vectorized_param_to_st(
+        vectorized_params, state, classical_registers
+    )
 
     avg = sum(measurement) / n_samples
-    assert jnp.allclose(avg, 0, atol = 1e-2)
+    assert jnp.allclose(avg, 0, atol=1e-2)
+
 
 def test_reset():
     ops = ["Reset"]
     op_params = [[0, 0]]
     param_inds = [[0]]
 
-    state = 1/jnp.sqrt(2) * jnp.array([1, 0, 0, 1]).reshape(2,2)
+    state = 1 / jnp.sqrt(2) * jnp.array([1, 0, 0, 1]).reshape(2, 2)
     seed = 0
 
     param_to_st = get_params_to_statetensor_func(ops, op_params, param_inds)
@@ -156,8 +160,8 @@ def test_reset():
         result, measurement = param_to_st(params, state, classical_registers)
 
         if measurement == 1:
-            assert jnp.allclose(result, jnp.array([1,0,0,0]).reshape(2,2))
+            assert jnp.allclose(result, jnp.array([1, 0, 0, 0]).reshape(2, 2))
         elif measurement == -1:
-            assert jnp.allclose(result, jnp.array([0,1,0,0]).reshape(2,2))
+            assert jnp.allclose(result, jnp.array([0, 1, 0, 0]).reshape(2, 2))
         else:
             raise ValueError("Measurement is not 1 or -1.")

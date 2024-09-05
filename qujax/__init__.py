@@ -2,10 +2,10 @@
 Simulating quantum circuits with JAX
 """
 
-
 from qujax.version import __version__
 
 from qujax import gates
+from qujax import kraus
 
 from qujax.statetensor import all_zeros_statetensor
 from qujax.statetensor import apply_gate

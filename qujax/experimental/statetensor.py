@@ -7,91 +7,56 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from qujax import gates
 from qujax.typing import Gate, GateFunction
 
 from qujax.statetensor import apply_gate
 
-PyTree = Any
+import qujax.experimental.statetensor_operations as statetensor_operations
+from qujax.experimental.typing import MetaparameterisedOperation, GateDict, PyTree
+from qujax.experimental.internal import _to_gate_func, _wrap_parameterised_tensor
+from qujax.experimental.utils import get_default_gates, get_params
 
-Operation = Union[
+StatetensorOperationSpecifier = Union[
     Gate,
     str,
 ]
 
 
-def wrap_parameterised_tensor(
-    gate_func: Callable, qubit_inds: Sequence[int]
-) -> Callable:
+def get_default_statetensor_operations(
+    gate_dict: GateDict,
+) -> Mapping[str, MetaparameterisedOperation]:
     """
-    Takes a callable representing a parameterised gate and wraps it in a function that takes
-    the returned jax.Array and applies it to the qubits specified by `qubit_inds`.
+    Returns dictionary of default operations supported by qujax. Each operation is a function
+    that takes a set of metaparemeters and returns another function. The returned function
+    must have three arguments: `op_params`, `statetensor_in` and `classical_registers_in`.
+    `op_params` holds parameters that are passed when the circuit is executed, while
+    `statetensor_in` and `classical_registers_in` correspond to the statetensor
+    and classical registers, respectively, being modified by the circuit.
 
-    Args:
-        gate_func: Callable representing parameterised gate.
-        qubit_inds: Indices gate is to be applied to.
-
-    Returns:
-        Callable taking in gate parameters, input statetensor and input classical registers,
-        and returning updated statetensor after applying parameterized gate to specified qubits.
-    """
-
-    def unitary_op(
-        params: Tuple[jax.Array],
-        statetensor_in: jax.Array,
-        classical_registers_in: PyTree,
-    ):
-        gate_unitary = gate_func(*params[0])
-        statetensor = apply_gate(statetensor_in, gate_unitary, qubit_inds)
-
-        return statetensor, classical_registers_in
-
-    return unitary_op
-
-
-def _array_to_callable(arr: jax.Array) -> Callable[[], jax.Array]:
-    """
-    Wraps array `arr` in a callable that takes no parameters and returns `arr`.
+    Parameters:
+        `gate_dict`: Dictionary encoding quantum gates that the circuit can use. This
+            dictionary maps strings to a callable in the case of parameterized gates or to a
+            jax.Array in the case of unparameterized gates.
     """
 
-    def _no_param_tensor():
-        return arr
+    op_dict: dict[str, MetaparameterisedOperation] = dict()
 
-    return _no_param_tensor
+    op_dict["Generic"] = statetensor_operations.generic_op
 
+    def _conditional_gate(gates: Sequence[Gate], qubit_inds: Sequence[int]):
+        return statetensor_operations.conditional_gate(gates, qubit_inds, gate_dict)
 
-def _to_gate_func(
-    gate: Gate,
-    tensor_dict: Mapping[str, Union[Callable, jax.Array]],
-) -> GateFunction:
-    """
-    Converts a gate specification to a callable function that takes the gate parameters and returns
-    the corresponding unitary.
+    op_dict["ConditionalGate"] = _conditional_gate
+    op_dict["Measure"] = statetensor_operations.measure
+    op_dict["Reset"] = statetensor_operations.reset
 
-    Args:
-        gate: Gate specification. Can be either a string, a callable or a jax.Array.
-
-    Returns:
-        Callable taking gate parameters and returning
-    """
-
-    if isinstance(gate, str):
-        gate = tensor_dict[gate]
-    if isinstance(gate, jax.Array):
-        gate = _array_to_callable(gate)
-    if callable(gate):
-        return gate
-    else:
-        raise TypeError(
-            f"Unsupported gate type - gate must be either a string in qujax.gates, a jax.Array or "
-            f"callable: {type(gate)}"
-        )
+    return op_dict
 
 
-def parse_op(
-    op: Operation,
+def parse_statetensor_op(
+    op: StatetensorOperationSpecifier,
     params: Sequence[Any],
-    gate_dict: Mapping[str, Union[Callable, jax.Array]],
+    gate_dict: GateDict,
     op_dict: Mapping[str, Callable],
 ) -> Callable:
     """
@@ -121,7 +86,7 @@ def parse_op(
         or callable(op)
     ):
         op = _to_gate_func(op, gate_dict)
-        return wrap_parameterised_tensor(op, params)
+        return _wrap_parameterised_tensor(op, params)
 
     if isinstance(op, str) and op in op_dict:
         return op_dict[op](*params)
@@ -132,197 +97,6 @@ def parse_op(
         raise TypeError(
             f"Invalid specification for `op`, got type {type(op)} with value {op}"
         )
-
-
-def get_default_gates() -> dict:
-    """
-    Returns dictionary of default gates supported by qujax.
-    """
-    return {
-        k: v for k, v in gates.__dict__.items() if not k.startswith(("_", "jax", "jnp"))
-    }
-
-
-def _gate_func_to_unitary(
-    gate_func: GateFunction,
-    n_qubits: int,
-    params: jax.Array,
-) -> jax.Array:
-    """
-    Compute tensor representing parameterised unitary for specific parameters.
-
-    Args:
-        gate_func: Function that maps a (possibly empty) parameter array to a unitary tensor
-        n_qubts: Number of qubits unitary acts on
-        params: Parameter vector
-
-    Returns:
-        Array containing gate unitary in tensor form.
-    """
-    gate_unitary = gate_func(*params)
-    gate_unitary = gate_unitary.reshape(
-        (2,) * (2 * n_qubits)
-    )  # Ensure gate is in tensor form
-    return gate_unitary
-
-
-Op = Callable[
-    [Tuple[jax.Array, ...], jax.Array, jax.Array], Tuple[jax.Array, jax.Array]
-]
-OpSpecArgs = TypeVarTuple("OpSpecArgs")
-OpSpec = Callable[[Unpack[OpSpecArgs]], Op]
-
-
-def get_default_operations(
-    gate_dict: Mapping[str, Union[Callable, jax.Array]]
-) -> Mapping[str, OpSpec]:
-    """
-    Returns dictionary of default operations supported by qujax. Each operation is a function
-    that takes a set of metaparemeters and returns another function. The returned function
-    must have three arguments: `op_params`, `statetensor_in` and `classical_registers_in`.
-    `op_params` holds parameters that are passed when the circuit is executed, while
-    `statetensor_in` and `classical_registers_in` correspond to the statetensor
-    and classical registers, respectively, being modified by the circuit.
-
-    Parameters:
-        `gate_dict`: Dictionary encoding quantum gates that the circuit can use. This
-            dictionary maps strings to a callable in the case of parameterized gates or to a
-            jax.Array in the case of unparameterized gates.
-    """
-    op_dict: dict[str, OpSpec] = dict()
-
-    def generic_op(f: Op) -> Op:
-        """
-        Generic operation to be applied to the circuit, passed as a metaparameter `f`.
-        """
-        return f
-
-    def conditional_gate(gates: Sequence[Gate], qubit_inds: Sequence[int]) -> Op:
-        """
-        Operation applying one of the gates in `gates` according to an index passed as a
-        circuit parameter.
-
-        Args:
-            gates: gates from which one is selected to be applied
-            qubit_indices: indices of qubits the selected gate is to be applied to
-        """
-        gate_funcs = [_to_gate_func(g, gate_dict) for g in gates]
-
-        def apply_conditional_gate(
-            op_params: Union[Tuple[jax.Array], Tuple[jax.Array, jax.Array]],
-            statetensor_in: jax.Array,
-            classical_registers_in: jax.Array,
-        ) -> Tuple[jax.Array, jax.Array]:
-            """
-            Applies a gate specified by an index passed in `op_params` to a statetensor.
-
-            Args:
-                op_params: gates from which one is selected to be applied
-                statetensor_in: indices of qubits the selected gate is to be applied to
-                classical_registers_in: indices of qubits the selected gate is to be applied to
-            """
-            if len(op_params) == 1:
-                ind, gate_params = op_params[0][0], jnp.empty((len(gates), 0))
-            elif len(op_params) == 2:
-                ind, gate_params = op_params[0][0], op_params[1]
-            else:
-                raise ValueError("Invalid number of parameters for ConditionalGate")
-
-            unitaries = jnp.stack(
-                [
-                    _gate_func_to_unitary(
-                        gate_funcs[i], len(qubit_inds), gate_params[i]
-                    )
-                    for i in range(len(gate_funcs))
-                ]
-            )
-
-            chosen_unitary = unitaries[ind]
-
-            statevector = apply_gate(statetensor_in, chosen_unitary, qubit_inds)
-            return statevector, classical_registers_in
-
-        return apply_conditional_gate
-
-    def measure(qubit_index: int, classical_register_index: int) -> Op:
-        """
-        Measure qubit.
-
-        Args:
-            qubit_index: index of qubit to measure
-        """
-
-        def apply_measure(
-            op_params: Tuple[jax.Array],
-            statetensor_in: jax.Array,
-            classical_registers_in: jax.Array,
-        ) -> Tuple[jax.Array, jax.Array]:
-            """
-            Applies a gate specified by an index passed in `op_params` to a statetensor.
-
-            Args:
-                op_params: gates from which one is selected to be applied
-                statetensor_in: indices of qubits the selected gate is to be applied to
-                classical_registers_in: indices of qubits the selected gate is to be applied to
-            """
-
-            rng = op_params[0]
-            sum_axes = tuple(x for x in range(statetensor_in.ndim) if x != qubit_index)
-
-            probabilities = jnp.sum(jnp.square(jnp.abs(statetensor_in)), axis = sum_axes)
-            projection_on_zero_state = jnp.array(([[1, 0], [0, 0]]))
-            projection_on_one_state = jnp.array(([[0, 0], [0, 1]]))
-            projection_array = jnp.array(
-                [projection_on_zero_state, projection_on_one_state]
-            )
-
-            measurement = jax.random.choice(rng, jnp.array([1, -1]), p=probabilities)
-            projection = projection_array[(1 - measurement) // 2]
-            statetensor_in = apply_gate(statetensor_in, projection, [qubit_index])
-            statetensor_in /= jnp.linalg.norm(statetensor_in)
-
-            classical_registers_in = classical_registers_in.at[classical_register_index].set(measurement)
-            return statetensor_in, classical_registers_in
-
-        return apply_measure
-
-    def reset(qubit_index: int, classical_register_index: Optional[int] = None) -> Op:
-        """
-        Reset qubit.
-
-        Args:
-            qubit_index: index of qubit to reset
-        """
-
-        def apply_reset(
-            op_params: Tuple[jax.Array],
-            statetensor_in: jax.Array,
-            classical_registers_in: jax.Array,
-        ) -> Tuple[jax.Array, jax.Array]:
-            """ """
-
-            statetensor_in, measurement = measure(qubit_index, 0)(
-                op_params, statetensor_in, jnp.zeros(1)
-            )
-
-            if classical_register_index is not None:
-                classical_registers_in = classical_registers_in.at[classical_register_index].set(measurement.item())
-
-            axes_order = jnp.array([[0, 1], [1, 0]])
-            rescaled_measurement = (1 - measurement) // 2
-            index = rescaled_measurement.astype(int)
-            chosen_axes_order = axes_order[index].reshape(2)
-            # conditional rotation to zero state
-            return jnp.take(statetensor_in, chosen_axes_order, axis=qubit_index), classical_registers_in
-
-        return apply_reset
-
-    op_dict["Generic"] = generic_op
-    op_dict["ConditionalGate"] = conditional_gate
-    op_dict["Measure"] = measure
-    op_dict["Reset"] = reset
-
-    return op_dict
 
 
 ParamInds = Optional[
@@ -336,64 +110,12 @@ ParamInds = Optional[
 ]
 
 
-def get_params(
-    param_inds: ParamInds,
-    params: Union[Mapping[str, ArrayLike], ArrayLike],
-    root : bool = True
-) -> Tuple[Any, ...]:
-    """
-    Extracts parameters from `params` using indices specified by `param_inds`.
-
-    Args:
-        param_inds: Indices of parameters. Can be
-            - None (results in an empty jax.Array)
-            - an integer, when `params` is an indexable array
-            - a dictionary, when `params` is also a dictionary
-            - nested list or tuples of the above
-        params: Parameters from which a subset is picked. Can be either an array or a dictionary
-            of arrays
-    Returns:
-        Tuple of indexed parameters respeciting the structure of nested lists/tuples of param_inds.
-
-    """
-    op_params: Tuple[Any, ...]
-    if param_inds is None:
-        op_params = jnp.empty(0)
-    elif param_inds == 0 and jnp.isscalar(params):
-        op_params = jnp.array([params])
-    elif isinstance(param_inds, int) and isinstance(params, jax.Array):
-        op_params = jnp.array([params[param_inds]])
-    elif isinstance(param_inds, dict) and isinstance(params, dict):
-        op_params = tuple(
-             get_params(param_inds[k], params[k], False) for k in param_inds
-        )
-        if len(op_params) == 1:
-            op_params = op_params[0]
-    elif isinstance(param_inds, (list, tuple)):
-        if len(param_inds):
-            if all(isinstance(x, int) for x in param_inds):
-                op_params = jnp.take(params, jnp.array(param_inds), axis=0)
-            else:
-                op_params = tuple(get_params(p, params, False) for p in param_inds)
-        else:
-            op_params = jnp.array([])
-    else:
-        raise TypeError(
-            f"Invalid specification for parameters: {type(param_inds)=} {type(params)=}."
-        )
-    
-    if root and not isinstance(op_params, tuple):
-        op_params = (op_params,)
-        
-    return op_params
-
-
 def get_params_to_statetensor_func(
-    op_seq: Sequence[Operation],
+    op_seq: Sequence[StatetensorOperationSpecifier],
     op_metaparams_seq: Sequence[Sequence[Any]],
     param_pos_seq: Sequence[ParamInds],
-    op_dict: Optional[Mapping[str, OpSpec]] = None,
-    gate_dict: Optional[Mapping[str, Union[jax.Array, GateFunction]]] = None,
+    op_dict: Optional[Mapping[str, MetaparameterisedOperation]] = None,
+    gate_dict: Optional[GateDict] = None,
 ):
     """
     Creates a function that maps circuit parameters to a statetensor.
@@ -427,7 +149,7 @@ def get_params_to_statetensor_func(
     if gate_dict is None:
         gate_dict = get_default_gates()
     if op_dict is None:
-        op_dict = get_default_operations(gate_dict)
+        op_dict = get_default_statetensor_operations(gate_dict)
 
     repeated_ops = set(gate_dict.keys()) & set(op_dict.keys())
     if repeated_ops:
@@ -436,7 +158,7 @@ def get_params_to_statetensor_func(
         )
 
     parsed_op_seq = [
-        parse_op(op, params, gate_dict, op_dict)
+        parse_statetensor_op(op, params, gate_dict, op_dict)
         for op, params in zip(op_seq, op_metaparams_seq)
     ]
 
