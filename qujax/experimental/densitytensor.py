@@ -5,17 +5,16 @@ from typing_extensions import TypeVarTuple, Unpack
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax.typing import ArrayLike
 
 from qujax.typing import Gate
 
 from qujax.densitytensor import kraus
 
-from qujax.typing import (
-    KrausOp,
-)
 
 from qujax.experimental.internal import _to_kraus_operator_seq_funcs
+from qujax.experimental.densitytensor_operations import reset
 
 
 from qujax.experimental.utils import get_default_gates, get_params
@@ -24,13 +23,8 @@ from qujax.experimental.typing import (
     ParamInds,
     GateDict,
     PyTree,
+    DensitytensorOperationSpecifier
 )
-
-DensitytensorOperationSpecifier = Union[
-    Gate,
-    KrausOp,
-    str,
-]
 
 
 def wrap_parameterised_tensor_list(
@@ -61,6 +55,41 @@ def wrap_parameterised_tensor_list(
 
     return kraus_op
 
+def repeating_subcircuit(
+    op_seq: Sequence[DensitytensorOperationSpecifier],
+    op_metaparams_seq: Sequence[Sequence[Any]],
+    param_pos_seq: Sequence[ParamInds],
+    op_dict: Optional[Mapping[str, MetaparameterisedOperation]] = None,
+    gate_dict: Optional[GateDict] = None,
+):
+    """ """
+    f = get_params_to_densitytensor_func(op_seq,op_metaparams_seq, param_pos_seq, op_dict, gate_dict)
+
+    def scanned_function(
+        op_params: Union[Tuple[jax.Array], Tuple[jax.Array, jax.Array]],
+        densitytensor_in: jax.Array,
+        classical_registers_in: jax.Array,
+    ) -> Tuple[jax.Array, jax.Array]:
+        flattened_params_and_treedef_list = [jax.tree.flatten(p) for p in op_params]
+        leaf_lengths = np.array([len(p) for p in flattened_params_and_treedef_list[0][0]])
+        leaf_boundaries = np.cumsum(leaf_lengths)[:-1]
+
+        flattened_param_list = [jnp.concat(p[0]) for p in flattened_params_and_treedef_list]
+        flattened_param_list = jnp.stack(flattened_param_list)
+        tree_structure = flattened_params_and_treedef_list[0][1]
+
+        def _f(registers, op_params):
+            densitytensor_in, classical_registers_in = registers
+            unflattened_params = jax.tree.unflatten(tree_structure, jnp.split(op_params, leaf_boundaries))
+            res = f(unflattened_params, densitytensor_in, classical_registers_in)
+            return res, None
+        
+        res =  jax.lax.scan(_f, (densitytensor_in, classical_registers_in), flattened_param_list)
+
+        return res[0]
+    
+    return scanned_function
+
 
 def get_default_densitytensor_operations(
     gate_dict: GateDict,
@@ -78,14 +107,16 @@ def get_default_densitytensor_operations(
             dictionary maps strings to a callable in the case of parameterized gates or to a
             jax.Array in the case of unparameterized gates.
     """
-
-    return {}
+    op_dict = {}
+    op_dict["RepeatingSubcircuit"] = repeating_subcircuit
+    op_dict["Reset"] = reset
+    return op_dict
 
 
 def parse_densitytensor_op(
     op: DensitytensorOperationSpecifier,
     metaparams: Sequence[Any],
-    params: Sequence[Any],
+    params_inds: Sequence[ParamInds],
     gate_dict: GateDict,
     op_dict: Mapping[str, Callable],
 ) -> Tuple[Callable, Any]:
@@ -116,11 +147,11 @@ def parse_densitytensor_op(
         or isinstance(op, (list, tuple))
         or callable(op)
     ):
-        op_list, params = _to_kraus_operator_seq_funcs(op, params, gate_dict)
-        return wrap_parameterised_tensor_list(op_list, metaparams), params
+        op_list, params_inds = _to_kraus_operator_seq_funcs(op, params_inds, gate_dict)
+        return wrap_parameterised_tensor_list(op_list, metaparams), params_inds
 
     if isinstance(op, str) and op in op_dict:
-        return op_dict[op](*metaparams), params
+        return op_dict[op](*metaparams), params_inds
 
     if isinstance(op, str):
         raise ValueError(f"String {op} not a known gate or operation")
@@ -178,8 +209,8 @@ def get_params_to_densitytensor_func(
         )
 
     parsed_op_and_param_pos_seq = [
-        parse_densitytensor_op(op, metaparams, params, gate_dict, op_dict)
-        for op, metaparams, params in zip(op_seq, op_metaparams_seq, param_pos_seq)
+        parse_densitytensor_op(op, metaparams, param_pos, gate_dict, op_dict)
+        for op, metaparams, param_pos in zip(op_seq, op_metaparams_seq, param_pos_seq)
     ]
     parsed_op_seq = [x[0] for x in parsed_op_and_param_pos_seq]
     parsed_param_pos_seq = [x[1] for x in parsed_op_and_param_pos_seq]
@@ -204,16 +235,26 @@ def get_params_to_densitytensor_func(
         densitytensor = densitytensor_in
         classical_registers = classical_registers_in
         for (
+            # raw_op,
             op,
             param_pos,
         ) in zip(
+            # op_seq,
             parsed_op_seq,
             parsed_param_pos_seq,
         ):
             op_params = get_params(param_pos, params)
+            if getattr(op, "__name__", None) == "scanned_function":
+                op_params = op_params[0]
+
+            densitytensor_old = densitytensor
             densitytensor, classical_registers = op(
                 op_params, densitytensor, classical_registers
             )
+            # to_print = raw_op.__name__ if callable(raw_op) else raw_op
+            # op_params = get_params(param_pos, params)
+            # jax.debug.print("{}", {to_print: jnp.array([])})
+            # jax.debug.print("{}", jnp.ravel(densitytensor)[:20])
 
         return densitytensor, classical_registers
 

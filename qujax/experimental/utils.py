@@ -36,6 +36,8 @@ def get_params(
         op_params = jnp.array([params])
     elif isinstance(param_inds, int) and isinstance(params, jax.Array):
         op_params = jnp.array([params[param_inds]])
+    elif isinstance(params, dict) and isinstance(param_inds, str):
+        op_params = params[param_inds]
     elif isinstance(param_inds, dict) and isinstance(params, dict):
         op_params = tuple(
             get_params(param_inds[k], params[k], False) for k in param_inds
@@ -49,6 +51,7 @@ def get_params(
             else:
                 op_params = tuple(get_params(p, params, False) for p in param_inds)
         else:
+
             op_params = jnp.array([])
     else:
         raise TypeError(

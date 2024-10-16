@@ -1,9 +1,12 @@
 import jax
 import jax.numpy as jnp
+from jax import jit
 
 import qujax
 from qujax import all_zeros_statetensor, apply_gate
+from qujax import all_zeros_densitytensor
 from qujax.experimental.statetensor import get_params_to_statetensor_func
+from qujax.experimental.densitytensor import get_params_to_densitytensor_func
 
 
 def test_get_params_to_statetensor_func():
@@ -33,6 +36,39 @@ def test_get_params_to_statetensor_func():
 
     assert st.size == true_sv.size
     assert jnp.allclose(st.flatten(), true_sv)
+
+
+def test_get_params_to_densitytensor_func():
+    n_qubits = 2
+
+    gate_seq = ["Rx" for _ in range(n_qubits)]
+    qubit_inds_seq = [(i,) for i in range(n_qubits)]
+    param_inds_seq = [(i,) for i in range(n_qubits)]
+
+    gate_seq += ["CZ" for _ in range(n_qubits - 1)]
+    qubit_inds_seq += [(i, i + 1) for i in range(n_qubits - 1)]
+    param_inds_seq += [() for _ in range(n_qubits - 1)]
+
+    params_to_dt = get_params_to_densitytensor_func(
+        gate_seq, qubit_inds_seq, param_inds_seq
+    )
+    params_to_st = get_params_to_statetensor_func(
+        gate_seq, qubit_inds_seq, param_inds_seq
+    )
+
+    params = jnp.arange(1, n_qubits + 1) / 10.0
+
+    st_in = all_zeros_statetensor(n_qubits)
+    st, _ = params_to_st(params, st_in)
+    dt_in = all_zeros_densitytensor(n_qubits)
+    dt_test = qujax.statetensor_to_densitytensor(st)
+
+    dt, _ = params_to_dt(params, dt_in)
+
+    assert jnp.allclose(dt, dt_test)
+
+    jit_dt, _ = jit(params_to_dt)(params, dt_in)
+    assert jnp.allclose(jit_dt, dt_test)
 
 
 def test_stochasticity():

@@ -9,7 +9,7 @@ from qujax.typing import Gate
 from qujax.statetensor import apply_gate
 
 from qujax.experimental.internal import _to_gate_func, _gate_func_to_unitary
-from qujax.experimental.typing import Operation
+from qujax.experimental.typing import Operation, GateMapping
 
 GateMapping = Mapping[str, Union[Callable, jax.Array]]
 

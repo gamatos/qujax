@@ -6,7 +6,7 @@ from jax.typing import ArrayLike
 
 from qujax.statetensor import apply_gate
 from qujax.typing import Gate, GateFunction, KrausOp, GateParameterIndices
-from qujax.experimental.typing import PyTree, GateDict
+from qujax.experimental.typing import PyTree, GateDict, ParamInds
 
 
 from qujax.utils import _arrayify_inds
@@ -14,7 +14,7 @@ from qujax.utils import _arrayify_inds
 
 def _to_kraus_operator_seq_funcs(
     kraus_op: KrausOp,
-    param_inds: Optional[Union[GateParameterIndices, Sequence[GateParameterIndices]]],
+    param_inds: ParamInds,
     tensor_dict: GateDict,
 ) -> Tuple[Sequence[GateFunction], Sequence[jax.Array]]:
     """
@@ -42,7 +42,7 @@ def _to_kraus_operator_seq_funcs(
         param_inds = [param_inds]
     else:
         raise ValueError(f"Invalid Kraus operator specification: {kraus_op}")
-    return kraus_op_funcs, _arrayify_inds(param_inds)
+    return kraus_op_funcs, param_inds
 
 
 def _gate_func_to_unitary(

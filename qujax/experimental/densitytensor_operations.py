@@ -1,17 +1,41 @@
-from typing import Callable, Sequence, Tuple, Optional, Mapping, Union
+from typing import Callable, Sequence, Tuple, Optional, Mapping, Union, Any
 
 import jax
 import jax.numpy as jnp
 
-from qujax.typing import KrausOp
+from qujax.typing import KrausOp, GateParameterIndices
 
 from qujax.statetensor import apply_gate
+from qujax.densitytensor import kraus
+from qujax.kraus import Reset
 
 from qujax.experimental.internal import _to_gate_func, _gate_func_to_unitary
-from qujax.experimental.typing import Operation
+from qujax.experimental.typing import Operation, GateMapping, DensitytensorOperationSpecifier, ParamInds, MetaparameterisedOperation, GateDict
 
 
-GateMapping = Mapping[str, Union[Callable, jax.Array]]
+
+def reset(
+    qubit_index: int, classical_register_index: Optional[int] = None
+) -> Operation:
+    """
+    Reset qubit.
+
+    Args:
+        qubit_index: index of qubit to reset
+    """
+
+    def apply_reset(
+        op_params: Tuple[jax.Array],
+        densitytensor_in: jax.Array,
+        classical_registers_in: jax.Array,
+    ) -> Tuple[jax.Array, jax.Array]:
+        """ """
+
+        res = kraus(densitytensor_in, Reset, [qubit_index])
+
+        return (res, classical_registers_in)
+
+    return apply_reset
 
 
 def conditional_gate(
