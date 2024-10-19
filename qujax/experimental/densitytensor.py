@@ -14,7 +14,7 @@ from qujax.densitytensor import kraus
 
 
 from qujax.experimental.internal import _to_kraus_operator_seq_funcs
-from qujax.experimental.densitytensor_operations import reset
+from qujax.experimental.densitytensor_operations import reset, pauliexpbox
 
 
 from qujax.experimental.utils import get_default_gates, get_params
@@ -110,6 +110,7 @@ def get_default_densitytensor_operations(
     op_dict = {}
     op_dict["RepeatingSubcircuit"] = repeating_subcircuit
     op_dict["Reset"] = reset
+    op_dict["PauliExpBox"] = pauliexpbox
     return op_dict
 
 
@@ -234,16 +235,17 @@ def get_params_to_densitytensor_func(
         """
         densitytensor = densitytensor_in
         classical_registers = classical_registers_in
-        for (
-            # raw_op,
+        for i, (
+            raw_op,
             op,
             param_pos,
-        ) in zip(
-            # op_seq,
+        ) in enumerate(zip(
+            op_seq,
             parsed_op_seq,
             parsed_param_pos_seq,
-        ):
+        )):
             op_params = get_params(param_pos, params)
+            # Bit of a hack - ideally this should not need to be here
             if getattr(op, "__name__", None) == "scanned_function":
                 op_params = op_params[0]
 

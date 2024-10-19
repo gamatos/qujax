@@ -5,6 +5,7 @@ import jax.numpy as jnp
 
 from qujax.typing import KrausOp, GateParameterIndices
 
+import qujax.gates
 from qujax.statetensor import apply_gate
 from qujax.densitytensor import kraus
 from qujax.kraus import Reset
@@ -12,6 +13,52 @@ from qujax.kraus import Reset
 from qujax.experimental.internal import _to_gate_func, _gate_func_to_unitary
 from qujax.experimental.typing import Operation, GateMapping, DensitytensorOperationSpecifier, ParamInds, MetaparameterisedOperation, GateDict
 
+
+def _get_pexb(tensor, d):
+    identity = jnp.diag(jnp.ones(tensor.shape[0]))
+    def _pexb(p) -> jax.Array:
+        a = -1 / 2 * jnp.pi * p
+        gate = jnp.cos(a) * identity + 1j * jnp.sin(a) * tensor
+        gate = gate.reshape((2,) * 2 * d)
+        return gate
+    return _pexb
+
+
+def pauliexpbox(
+    pauli_string : str, qubit_inds: Sequence[int]
+) -> Operation:
+    """
+    Apply PauliExpBox.
+
+    Args:
+        qubit_index: index of qubit to reset
+    """
+
+    tensor = jnp.ones(1)
+    # Build tensor product of Pauli matrices
+    for p in pauli_string:
+        m = qujax.gates.__dict__[p]
+        tensor = jnp.kron(tensor, m)      
+
+    identity = jnp.diag(jnp.ones(tensor.shape[0]))
+    n_paulis = len(pauli_string)
+    
+    def apply_pauliexpbox(
+        op_params: Tuple[jax.Array],
+        densitytensor_in: jax.Array,
+        classical_registers_in: jax.Array,
+    ) -> Tuple[jax.Array, jax.Array]:
+        """ """
+
+        a = -1 / 2 * jnp.pi * op_params[0]
+        gate = jnp.cos(a) * identity + 1j * jnp.sin(a) * tensor
+        gate = gate.reshape((2,) * 2 * n_paulis)
+
+        res = kraus(densitytensor_in, gate, qubit_inds)
+
+        return (res, classical_registers_in)
+
+    return apply_pauliexpbox
 
 
 def reset(
