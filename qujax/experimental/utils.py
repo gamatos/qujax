@@ -51,7 +51,6 @@ def get_params(
             else:
                 op_params = tuple(get_params(p, params, False) for p in param_inds)
         else:
-
             op_params = jnp.array([])
     else:
         raise TypeError(

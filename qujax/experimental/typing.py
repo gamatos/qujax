@@ -35,4 +35,3 @@ DensitytensorOperationSpecifier = Union[
     KrausOp,
     str,
 ]
-
