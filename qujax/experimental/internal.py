@@ -73,7 +73,7 @@ def wrap_parameterised_tensor_list(
         densitytensor_in: jax.Array,
         classical_registers_in: PyTree,
     ):
-        gate_matrices = [g(*params[0]) for g in gate_func]
+        gate_matrices = [g(*p) for g, p in zip(gate_func, params)]
         densitytensor = kraus(densitytensor_in, gate_matrices, qubit_inds)
 
         return densitytensor, classical_registers_in
