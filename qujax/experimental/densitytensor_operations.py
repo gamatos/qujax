@@ -28,7 +28,13 @@ from qujax.experimental.typing import (
 from qujax.experimental.utils import get_params
 
 
-def _get_pexb(tensor, d):
+def _get_pexb(pauli_string, d):
+    tensor = jnp.ones(1)
+    # Build tensor product of Pauli matrices
+    for p in pauli_string:
+        # TODO: Handle op_dict and gate_dict
+        m = qujax.gates.__dict__[p]
+        tensor = jnp.kron(tensor, m)
     identity = jnp.diag(jnp.ones(tensor.shape[0]))
 
     def _pexb(p) -> jax.Array:
@@ -83,7 +89,7 @@ def conditional_operation(
             index, params = op_params
             parsed_op_params = get_params(parsed_param_pos, params)
         else:
-            index, params = parsed_op_params[0], (jnp.array([]),)
+            index, parsed_op_params = op_params[0], (jnp.array([]),)
         i = index.reshape()
         grouped_params = [x for x in zip(*parsed_op_params[0])]
         chosen_params = tuple(jnp.stack(jnp.array(g))[i] for g in grouped_params)
